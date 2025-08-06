@@ -31,13 +31,17 @@ def initialize_services():
             logger.error("Missing API keys")
             return False
         
-        # Import required modules
-        from langchain_pinecone import PineconeVectorStore
-        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-        from langchain.chains import create_retrieval_chain
-        from langchain.chains.combine_documents import create_stuff_documents_chain
-        from langchain_core.prompts import ChatPromptTemplate
-        from src.prompt import system_prompt
+        # Import required modules with error handling
+        try:
+            from langchain_pinecone import PineconeVectorStore
+            from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+            from langchain.chains import create_retrieval_chain
+            from langchain.chains.combine_documents import create_stuff_documents_chain
+            from langchain_core.prompts import ChatPromptTemplate
+            from src.prompt import system_prompt
+        except ImportError as e:
+            logger.error(f"Import error: {str(e)}")
+            return False
         
         logger.info("Loading OpenAI embeddings model...")
         embedding = OpenAIEmbeddings(
@@ -72,6 +76,19 @@ def initialize_services():
     except Exception as e:
         logger.error(f"Error initializing services: {str(e)}")
         return False
+
+# Simple test route
+@app.route('/test')
+def test():
+    try:
+        return jsonify({
+            "status": "ok",
+            "message": "App is working!",
+            "pinecone_key": bool(PINECONE_API_KEY),
+            "openai_key": bool(OPENAI_API_KEY)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Default route
 @app.route('/')
