@@ -18,10 +18,5 @@
   "env": {
     "PYTHONPATH": ".",
     "TRANSFORMERS_CACHE": "/tmp/transformers_cache"
-  },
-  "functions": {
-    "app.py": {
-      "maxDuration": 30
-    }
   }
 } 
