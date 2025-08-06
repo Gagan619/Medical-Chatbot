@@ -34,7 +34,7 @@ def initialize_services():
         from src.helper import download_embeddings
         
         # Load the embeddings model
-        print("Loading embeddings model...")
+        print("Loading OpenAI embeddings model...")
         embedding = download_embeddings()
         
         # Load the index

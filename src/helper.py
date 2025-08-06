@@ -1,8 +1,8 @@
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List
 from langchain.schema import Document
+import os
 
 # Extract text from PDF files
 def load_pdf_files(data):
@@ -47,17 +47,25 @@ def text_split(minimal_docs):
 
 
 
-# Download embedding from HuggingFace
+# Download embedding - using OpenAI embeddings
 def download_embeddings():
     """
-    Download and return the HuggingFace embeddings model.
-    Using a lighter model to reduce memory usage.
+    Download and return the OpenAI embeddings model.
+    This is much lighter and doesn't require heavy ML packages.
     """
-    # Using a lighter model for better memory efficiency
-    model_name = "sentence-transformers/all-MiniLM-L6-v2"
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs={'device': 'cpu'},  # Force CPU to save memory
-        encode_kwargs={'normalize_embeddings': True}
-    )
-    return embeddings
+    try:
+        # Try to use OpenAI embeddings first
+        from langchain_openai import OpenAIEmbeddings
+        embeddings = OpenAIEmbeddings(
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            model="text-embedding-ada-002"
+        )
+        return embeddings
+    except ImportError:
+        # Fallback to community embeddings if OpenAI is not available
+        from langchain_community.embeddings import OpenAIEmbeddings
+        embeddings = OpenAIEmbeddings(
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            model="text-embedding-ada-002"
+        )
+        return embeddings
