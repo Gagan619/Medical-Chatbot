@@ -1,12 +1,11 @@
 from flask import Flask, render_template, jsonify, request
-from langchain_pinecone import PineconeVectorStore
-from langchain_openai import ChatOpenAI
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
-from src.prompt import *
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -17,39 +16,46 @@ load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-
 # Initialize variables
 embedding = None
 docsearch = None
 rag_chain = None
 
 def initialize_services():
-    """Initialize the AI services with lazy loading"""
+    """Initialize the AI services with proper error handling"""
     global embedding, docsearch, rag_chain
     
     try:
-        # Only import when needed to save memory
-        from src.helper import download_embeddings
+        # Check if API keys are available
+        if not PINECONE_API_KEY or not OPENAI_API_KEY:
+            logger.error("Missing API keys")
+            return False
         
-        # Load the embeddings model
-        print("Loading OpenAI embeddings model...")
-        embedding = download_embeddings()
+        # Import required modules
+        from langchain_pinecone import PineconeVectorStore
+        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+        from langchain.chains import create_retrieval_chain
+        from langchain.chains.combine_documents import create_stuff_documents_chain
+        from langchain_core.prompts import ChatPromptTemplate
+        from src.prompt import system_prompt
         
-        # Load the index
-        print("Connecting to Pinecone...")
+        logger.info("Loading OpenAI embeddings model...")
+        embedding = OpenAIEmbeddings(
+            openai_api_key=OPENAI_API_KEY,
+            model="text-embedding-ada-002"
+        )
+        
+        logger.info("Connecting to Pinecone...")
         index_name = "medical-chatbot"
         docsearch = PineconeVectorStore.from_existing_index(
             index_name=index_name,
             embedding=embedding
         )
         
-        # Create the retrieval chain
-        print("Creating retrieval chain...")
+        logger.info("Creating retrieval chain...")
         retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k":3})
         
-        chatModel = ChatOpenAI(model="gpt-4o-mini")
+        chatModel = ChatOpenAI(model="gpt-4o-mini", openai_api_key=OPENAI_API_KEY)
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", system_prompt),
@@ -60,49 +66,91 @@ def initialize_services():
         question_answer_chain = create_stuff_documents_chain(chatModel, prompt)
         rag_chain = create_retrieval_chain(retriever, question_answer_chain)
         
-        print("Services initialized successfully!")
+        logger.info("Services initialized successfully!")
         return True
+        
     except Exception as e:
-        print(f"Error initializing services: {e}")
+        logger.error(f"Error initializing services: {str(e)}")
         return False
 
 # Default route
 @app.route('/')
 def index():
-    return render_template('chat.html')
+    try:
+        return render_template('chat.html')
+    except Exception as e:
+        logger.error(f"Error in index route: {str(e)}")
+        return jsonify({"error": "Template not found"}), 500
 
 # Route to handle chat requests
 @app.route('/get', methods=['GET', 'POST'])
 def chat():
     try:
+        global rag_chain
+        
+        # Initialize services if not already done
         if rag_chain is None:
+            logger.info("Initializing services...")
             if not initialize_services():
-                return jsonify({"error": "Services not initialized. Please check your API keys and try again."}), 500
+                return jsonify({"error": "Failed to initialize services. Please check your API keys."}), 500
         
-        msg = request.form['msg']
-        input_text = msg
-        print(f"Received message: {input_text}")
+        # Get the message from the request
+        if request.method == 'POST':
+            msg = request.form.get('msg', '')
+        else:
+            msg = request.args.get('msg', '')
         
+        if not msg:
+            return jsonify({"error": "No message provided"}), 400
+        
+        logger.info(f"Received message: {msg}")
+        
+        # Get response from RAG chain
         response = rag_chain.invoke({"input": msg})
-        return str(response['answer'])
+        answer = response.get('answer', 'No answer generated')
+        
+        return str(answer)
     
     except Exception as e:
-        print(f"Error in chat: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error in chat route: {str(e)}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 # Health check route for Vercel
 @app.route('/health')
 def health():
-    return jsonify({"status": "healthy", "services_initialized": rag_chain is not None}), 200
+    try:
+        return jsonify({
+            "status": "healthy",
+            "services_initialized": rag_chain is not None,
+            "pinecone_key": bool(PINECONE_API_KEY),
+            "openai_key": bool(OPENAI_API_KEY)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in health route: {str(e)}")
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 # Debug route to check environment variables
 @app.route('/debug')
 def debug():
-    return jsonify({
-        "pinecone_key": bool(PINECONE_API_KEY),
-        "openai_key": bool(OPENAI_API_KEY),
-        "services_initialized": rag_chain is not None
-    })
+    try:
+        return jsonify({
+            "pinecone_key": bool(PINECONE_API_KEY),
+            "openai_key": bool(OPENAI_API_KEY),
+            "services_initialized": rag_chain is not None,
+            "environment": "production" if os.getenv("VERCEL") else "development"
+        })
+    except Exception as e:
+        logger.error(f"Error in debug route: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
 
 # Vercel handler
 def handler(request):
