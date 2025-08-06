@@ -123,10 +123,28 @@ def chat():
         logger.info(f"Received message: {msg}")
         
         # Get response from RAG chain
-        response = rag_chain.invoke({"input": msg})
-        answer = response.get('answer', 'No answer generated')
-        
-        return str(answer)
+        try:
+            response = rag_chain.invoke({"input": msg})
+            answer = response.get('answer', 'No answer generated')
+            logger.info(f"Generated answer: {answer[:100]}...")
+            return str(answer)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error in RAG chain: {error_msg}")
+            
+            # Handle specific API errors
+            if "insufficient_quota" in error_msg or "429" in error_msg:
+                return jsonify({
+                    "error": "OpenAI API quota exceeded. Please check your billing and try again later.",
+                    "details": "You've exceeded your current OpenAI API quota. Please visit https://platform.openai.com/account/billing to add credits."
+                }), 429
+            elif "invalid_api_key" in error_msg:
+                return jsonify({
+                    "error": "Invalid OpenAI API key. Please check your configuration.",
+                    "details": "The OpenAI API key is invalid or expired."
+                }), 401
+            else:
+                return jsonify({"error": f"Error generating response: {error_msg}"}), 500
     
     except Exception as e:
         logger.error(f"Error in chat route: {str(e)}")
@@ -176,5 +194,6 @@ def handler(request):
 # Running the app on local host
 if __name__ == '__main__':
     # Initialize services on startup for local development
+    logger.info("Starting local development server...")
     initialize_services()
     app.run(host="0.0.0.0", port=8080, debug=True)
