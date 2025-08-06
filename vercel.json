@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "app.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
   ],
   "routes": [
@@ -13,6 +16,12 @@
     }
   ],
   "env": {
-    "PYTHONPATH": "."
+    "PYTHONPATH": ".",
+    "TRANSFORMERS_CACHE": "/tmp/transformers_cache"
+  },
+  "functions": {
+    "app.py": {
+      "maxDuration": 30
+    }
   }
 } 

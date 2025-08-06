@@ -1,6 +1,6 @@
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List
 from langchain.schema import Document
 
@@ -51,9 +51,13 @@ def text_split(minimal_docs):
 def download_embeddings():
     """
     Download and return the HuggingFace embeddings model.
+    Using a lighter model to reduce memory usage.
     """
+    # Using a lighter model for better memory efficiency
     model_name = "sentence-transformers/all-MiniLM-L6-v2"
     embeddings = HuggingFaceEmbeddings(
-        model_name=model_name
+        model_name=model_name,
+        model_kwargs={'device': 'cpu'},  # Force CPU to save memory
+        encode_kwargs={'normalize_embeddings': True}
     )
     return embeddings
